@@ -486,7 +486,7 @@ class FullQKAttention(nn.Module):
 # Shared qk attention, using either full or LSH attention
 
 class LSHSelfAttention(nn.Module):
-    def __init__(self, dim, heads = 8, bucket_size = 64, n_hashes = 8, causal = False, dim_head = None, attn_chunks = 1, random_rotations_per_head = False, attend_across_buckets = True, allow_duplicate_attention = True, num_mem_kv = 0, one_value_head = False, use_full_attn = False, full_attn_thres = None, return_attn = False, post_attn_dropout = 0., dropout = 0., n_local_attn_heads = 0, **kwargs):
+    def __init__(self, dim, heads = 8, bucket_size = 64, n_hashes = 8, causal = False, dim_head = None, attn_chunks = 1, random_rotations_per_head = False, attend_across_buckets = True, allow_duplicate_attention = True, num_mem_kv = 0, one_value_head = False, use_full_attn = False, full_attn_thres = None, return_attn = True, post_attn_dropout = 0., dropout = 0., n_local_attn_heads = 0, **kwargs):
         super().__init__()
         assert dim_head or (dim % heads) == 0, 'dimensions must be divisible by number of heads'
         assert n_local_attn_heads < heads, 'local attention heads must be less than number of heads'
@@ -507,7 +507,16 @@ class LSHSelfAttention(nn.Module):
         self.to_out = nn.Linear(dim_heads, dim)
 
         self.bucket_size = bucket_size
-        self.lsh_attn = LSHAttention(bucket_size=bucket_size, n_hashes=n_hashes, causal=causal, random_rotations_per_head=random_rotations_per_head, attend_across_buckets = attend_across_buckets,  allow_duplicate_attention = allow_duplicate_attention, return_attn = return_attn, dropout = dropout, **kwargs)
+        self.lsh_attn = LSHAttention(
+            bucket_size=bucket_size, 
+            n_hashes=n_hashes, 
+            causal=causal, 
+            random_rotations_per_head=random_rotations_per_head, 
+            attend_across_buckets = attend_across_buckets,  
+            allow_duplicate_attention = allow_duplicate_attention, 
+            return_attn = return_attn, 
+            dropout = dropout, 
+            **kwargs)
         self.full_attn = FullQKAttention(causal=causal, dropout=dropout)
         self.post_attn_dropout = nn.Dropout(post_attn_dropout)
 
@@ -576,7 +585,6 @@ class LSHSelfAttention(nn.Module):
         attn_fn_in_chunks = process_inputs_chunk(partial_attn_fn, chunks = self.attn_chunks)
 
         out, attn, buckets = attn_fn_in_chunks(qk, v, **masks)
-
         if self.callback is not None:
             self.callback(attn.reshape(b, lsh_h, t, -1), buckets.reshape(b, lsh_h, -1))
 
@@ -705,13 +713,12 @@ class Reformer(nn.Module):
             g = residual_fn_wrapper(parallel_net)
 
             blocks.append(nn.ModuleList([f, g]))
-
         self.layers = ReversibleSequence(nn.ModuleList(blocks), layer_dropout = layer_dropout, reverse_thres = reverse_thres, send_signal = True)
 
     def forward(self, x, **kwargs):
-        x = torch.cat([x, x], dim = -1)
+        x = torch.cat([x, x], dim = -1) # initialize the two branches of reversible network with the same input
         x = self.layers(x, **kwargs)
-        return torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
+        return torch.stack(x.chunk(2, dim=-1)).mean(dim=0) # average the output of the two branches of reversible network as the final output
 
 class ReformerLM(nn.Module):
     def __init__(self, num_tokens, dim, depth, max_seq_len, heads = 8, dim_head = 64, bucket_size = 64, n_hashes = 4, ff_chunks = 100, attn_chunks = 1, causal = False, weight_tie = False, lsh_dropout = 0., ff_dropout = 0., ff_mult = 4, ff_activation = None, ff_glu = False, post_attn_dropout = 0., layer_dropout = 0., random_rotations_per_head = False, use_scale_norm = False, use_rezero = False, use_full_attn = False, full_attn_thres = 0, reverse_thres = 0, num_mem_kv = 0, one_value_head = False, emb_dim = None, return_embeddings = False, weight_tie_embedding = False, fixed_position_emb = False, absolute_position_emb = False, axial_position_emb = False, axial_position_shape = None, n_local_attn_heads = 0, pkm_layers = tuple(), pkm_num_keys = 128):

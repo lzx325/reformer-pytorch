@@ -38,7 +38,7 @@ def decode_tokens(tokens):
 
 model = ReformerLM(
     dim = 512,
-    depth = 6,
+    depth = 1,
     max_seq_len = SEQ_LEN,
     num_tokens = 256,
     heads = 8,
@@ -61,7 +61,6 @@ with gzip.open('./data/enwik8.gz') as file:
     X = np.fromstring(file.read(int(95e6)), dtype=np.uint8)
     trX, vaX = np.split(X, [int(90e6)])
     data_train, data_val = torch.from_numpy(trX), torch.from_numpy(vaX)
-
 class TextSamplerDataset(Dataset):
     def __init__(self, data, seq_len):
         super().__init__()
@@ -109,8 +108,10 @@ for i in tqdm.tqdm(range(NUM_BATCHES), mininterval=10., desc='training'):
         model.eval()
         inp = random.choice(val_dataset)[:-1]
         prime = decode_tokens(inp)
-        print(f'%s \n\n %s', (prime, '*' * 100))
-
+        print("*"*100)
+        print(prime)
         sample = model.generate(inp, GENERATE_LENGTH)
         output_str = decode_tokens(sample)
+        print("*"*100)
         print(output_str)
+

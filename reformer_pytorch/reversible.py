@@ -118,7 +118,7 @@ class IrreversibleBlock(nn.Module):
 class _ReversibleFunction(Function):
     @staticmethod
     def forward(ctx, x, blocks, kwargs):
-        ctx.kwargs = kwargs
+        ctx.kwargs = kwargs # save the kwargs in cache to use in backward pass
         for block in blocks:
             x = block(x, **kwargs)
         ctx.y = x.detach()
@@ -143,18 +143,18 @@ class ReversibleSequence(nn.Module):
         self.irrev_blocks = nn.ModuleList([IrreversibleBlock(f=f, g=g) for f, g in blocks])
 
     def forward(self, x, arg_route = (True, False), **kwargs):
-        reverse = x.shape[1] > self.reverse_thres
+        reverse = x.shape[1] > self.reverse_thres # x needs to be a long-enough sequence to use Reversible Layer
         blocks = self.blocks if reverse else self.irrev_blocks
 
         if self.training and self.layer_dropout > 0:
-            to_drop = torch.empty(len(self.blocks)).uniform_(0, 1) < self.layer_dropout
-            blocks = [block for block, drop in zip(self.blocks, to_drop) if not drop]
-            blocks = self.blocks[:1] if len(blocks) == 0 else blocks
+            to_drop = torch.empty(len(self.blocks)).uniform_(0, 1) < self.layer_dropout # randomly toss a coin to drop layers
+            blocks = [block for block, drop in zip(self.blocks, to_drop) if not drop] # extract out only the randomly chosen layers
+            blocks = self.blocks[:1] if len(blocks) == 0 else blocks # select at least one layer if none were chosen
 
         f_args, g_args = map(lambda route: kwargs if route else {}, arg_route)
         block_kwargs = {'f_args': f_args, 'g_args': g_args}
 
-        if not reverse:
+        if not reverse: # non-reversible forward, gradient tracked by PyTorch
             for block in blocks:
                 x = block(x, **block_kwargs)
             return x
