@@ -254,8 +254,7 @@ class LSHAttention(nn.Module):
             _, buckets = sort_key_val(rotated_vecs, bucket_range, dim=-1)
             # buckets size [batch size, seq_len, buckets]
             buckets = buckets[... , -self.n_hashes:].transpose(1, 2)
-
-        # buckets is now (self.n_hashes, seq_len). Next we add offsets so that
+        # buckets is now (batch, self.n_hashes, seq_len). Next we add offsets so that
         # bucket numbers from different hashing rounds don't overlap.
         offsets = torch.arange(self.n_hashes, device=device)
         offsets = torch.reshape(offsets * n_buckets, (1, -1, 1))
@@ -273,7 +272,6 @@ class LSHAttention(nn.Module):
 
         n_buckets = seqlen // self.bucket_size
         buckets = self.hash_vectors(n_buckets, qk, key_namespace=depth, fetch=is_reverse, set_cache=self.training)
-
         # We use the same vector as both a query and a key.
         assert int(buckets.shape[1]) == self.n_hashes * seqlen
 
@@ -436,6 +434,7 @@ class LSHAttention(nn.Module):
             attn = torch.sum(unsorted_dots[:, :, 0:query_len, :] * probs, dim=1)
 
         # return output, attention matrix, and bucket distribution
+        # buckets: (batch, self.n_hashes * seq_len)
         return out, attn, buckets
 
 # simple full attention
